@@ -1,0 +1,243 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  RECEPTIONIST
+  TRAINER
+}
+
+enum MemberStatus {
+  Active
+  Inactive
+  Suspended
+  Expired
+}
+
+enum MembershipStatus {
+  Paid
+  Partial
+  Unpaid
+}
+
+enum PaymentStatus {
+  Paid
+  Partial
+  Unpaid
+  Overdue
+}
+
+enum PaymentMethod {
+  Cash
+  BankTransfer
+  Card
+  Online
+  Other
+}
+
+model User {
+  id           String     @id @default(uuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         Role       @default(RECEPTIONIST)
+  phone        String?
+  status       String     @default("Active")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  paymentsReceived Payment[]
+  expensesCreated  Expense[]
+  auditLogs        AuditLog[]
+  trainerProfile   Trainer?
+}
+
+model Member {
+  id               String       @id @default(uuid())
+  memberId         String       @unique
+  fullName         String
+  fatherName       String?
+  phone            String
+  email            String?
+  address          String?
+  dob              DateTime?
+  gender           String?
+  joiningDate      DateTime     @default(now())
+  profilePhoto     String?
+  emergencyContact String?
+  emergencyPhone   String?
+  status           MemberStatus @default(Active)
+  notes            String?
+  trainerId        String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  trainer          Trainer?     @relation(fields: [trainerId], references: [id])
+  memberships      Membership[]
+  payments         Payment[]
+  attendances      Attendance[]
+}
+
+model MembershipPlan {
+  id          String       @id @default(uuid())
+  name        String
+  duration    Int          // Duration in months or days
+  price       Float
+  description String?
+  status      String       @default("Active")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  memberships Membership[]
+}
+
+model Membership {
+  id              String           @id @default(uuid())
+  memberId        String
+  planId          String
+  startDate       DateTime
+  endDate         DateTime
+  planPrice       Float
+  discount        Float            @default(0)
+  netAmount       Float
+  paidAmount      Float            @default(0)
+  remainingAmount Float            @default(0)
+  status          MembershipStatus @default(Unpaid)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  member          Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  plan            MembershipPlan   @relation(fields: [planId], references: [id])
+  payments        Payment[]
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  receiptNumber   String        @unique
+  memberId        String
+  membershipId    String?
+  paymentDate     DateTime      @default(now())
+  amount          Float
+  paymentMethod   PaymentMethod @default(Cash)
+  previousBalance Float         @default(0)
+  remainingBalance Float        @default(0)
+  status          PaymentStatus @default(Paid)
+  remarks         String?
+  receivedById    String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  member          Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  membership      Membership?   @relation(fields: [membershipId], references: [id])
+  receivedBy      User?         @relation(fields: [receivedById], references: [id])
+}
+
+model ExpenseCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  expenses    Expense[]
+}
+
+model Expense {
+  id            String          @id @default(uuid())
+  expenseId     String          @unique
+  date          DateTime        @default(now())
+  categoryId    String
+  description   String
+  amount        Float
+  paymentMethod PaymentMethod   @default(Cash)
+  paidTo        String?
+  reference     String?
+  remarks       String?
+  createdById   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  category      ExpenseCategory @relation(fields: [categoryId], references: [id])
+  createdBy     User?           @relation(fields: [createdById], references: [id])
+}
+
+model Attendance {
+  id        String    @id @default(uuid())
+  memberId  String
+  date      DateTime  @default(now())
+  checkIn   DateTime  @default(now())
+  checkOut  DateTime?
+  status    String    @default("Present")
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model Trainer {
+  id             String    @id @default(uuid())
+  trainerId      String    @unique
+  name           String
+  phone          String
+  email          String?
+  specialization String?
+  joiningDate    DateTime  @default(now())
+  salary         Float     @default(0)
+  status         String    @default("Active")
+  notes          String?
+  photo          String?
+  userId         String?   @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user           User?     @relation(fields: [userId], references: [id])
+  assignedMembers Member[]
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  message   String
+  type      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  userName    String
+  action      String
+  module      String
+  recordId    String?
+  description String
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id])
+}
+
+model GymSettings {
+  id              String   @id @default(uuid())
+  gymName         String   @default("IronPulse Fitness & Gym")
+  logo            String?
+  address         String   @default("124 Athletic Avenue, Downtown")
+  phone           String   @default("+1 (555) 234-5678")
+  email           String   @default("contact@ironpulse.gym")
+  website         String   @default("https://ironpulse.gym")
+  currency        String   @default("$")
+  receiptFooter   String   @default("Thank you for your business! Stay Strong & Healthy.")
+  termsConditions String   @default("1. Membership fees are non-refundable.\n2. Gym rules and safety regulations must be followed at all times.")
+  dateFormat      String   @default("YYYY-MM-DD")
+  timezone        String   @default("UTC")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

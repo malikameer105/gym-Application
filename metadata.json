@@ -1,0 +1,6 @@
+{
+  "name": "Gym Management Software",
+  "description": "Complete, production-ready Gym Management Software for managing members, memberships, payments, attendance, trainers, expenses, and financial reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
