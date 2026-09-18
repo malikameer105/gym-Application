@@ -1,5 +1,10 @@
 import express from 'express';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
 import cookieParser from 'cookie-parser';
+import cors from 'cors';
 import path from 'path';
 import bcrypt from 'bcryptjs';
 import { createServer as createViteServer } from 'vite';
@@ -12,6 +17,15 @@ import {
   createNotification,
   AuthenticatedRequest
 } from './server/auth.js';
+import {
+  sendWelcomeMemberEmail,
+  sendPaymentReceiptEmail,
+  sendExpiryAlertEmail,
+  sendPasswordResetEmail,
+  sendTestEmail,
+  verifySmtpConnection,
+  getSmtpConfig
+} from './server/email.js';
 import { Role, MemberStatus, MembershipStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 
 const PORT = 3000;
@@ -19,8 +33,89 @@ const PORT = 3000;
 async function startServer() {
   const app = express();
 
-  app.use(express.json());
+  // Production CORS configuration
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
+    : true;
+
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins === true) return callback(null, true);
+      if (Array.isArray(allowedOrigins)) {
+        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+          return callback(null, true);
+        }
+        const matchesWildcard = allowedOrigins.some(pattern => {
+          if (pattern.startsWith('*.')) {
+            return origin.endsWith(pattern.slice(2));
+          }
+          return false;
+        });
+        if (matchesWildcard) return callback(null, true);
+      }
+      return callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  }));
+
+  app.use(express.json({ limit: '10mb' }));
   app.use(cookieParser());
+
+  // -------------------------------------------------------------
+  // HEALTH CHECK & MONITORING
+  // -------------------------------------------------------------
+  app.get('/api/health', async (req, res) => {
+    let dbStatus = 'disconnected';
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      dbStatus = 'connected';
+    } catch (err: any) {
+      dbStatus = `error: ${err.message}`;
+    }
+
+    const smtpConfig = getSmtpConfig();
+
+    res.json({
+      status: dbStatus === 'connected' ? 'healthy' : 'degraded',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      database: dbStatus,
+      smtp: {
+        configured: Boolean(smtpConfig),
+        host: smtpConfig?.host || null
+      },
+      environment: process.env.NODE_ENV || 'development'
+    });
+  });
+
+  // -------------------------------------------------------------
+  // EMAIL STATUS & TESTING (BREVO SMTP)
+  // -------------------------------------------------------------
+  app.get('/api/email/status', requireAuth, requireRole(Role.SUPER_ADMIN, Role.ADMIN), async (req, res) => {
+    const status = await verifySmtpConnection();
+    res.json(status);
+  });
+
+  app.post('/api/email/test', requireAuth, requireRole(Role.SUPER_ADMIN, Role.ADMIN), async (req: AuthenticatedRequest, res) => {
+    try {
+      const { to } = req.body;
+      const recipient = to || req.user?.email;
+      if (!recipient) {
+        res.status(400).json({ error: 'Please provide a recipient email address.' });
+        return;
+      }
+      const result = await sendTestEmail(recipient);
+      if (!result.success) {
+        res.status(400).json({ error: result.error || 'Failed to send test email.' });
+        return;
+      }
+      res.json({ message: `Test email successfully dispatched to ${recipient}`, messageId: result.messageId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Internal error while sending test email' });
+    }
+  });
 
   // -------------------------------------------------------------
   // AUTHENTICATION ROUTES
@@ -454,6 +549,15 @@ async function startServer() {
         'NEW_MEMBER'
       );
 
+      if (member.email) {
+        sendWelcomeMemberEmail({
+          fullName: member.fullName,
+          email: member.email,
+          memberId: member.memberId,
+          phone: member.phone
+        }).catch(err => console.error('Error dispatching member welcome email:', err));
+      }
+
       res.status(201).json(member);
     } catch (error) {
       console.error('Error creating member:', error);
@@ -767,6 +871,23 @@ async function startServer() {
         );
       }
 
+      if (member.email) {
+        prisma.gymSettings.findFirst().then(settings => {
+          if (result.payment) {
+            sendPaymentReceiptEmail(
+              { fullName: member.fullName, email: member.email!, memberId: member.memberId },
+              result.payment,
+              settings
+            ).catch(err => console.error('Error sending registration receipt email:', err));
+          } else {
+            sendWelcomeMemberEmail(
+              { fullName: member.fullName, email: member.email!, memberId: member.memberId, phone: member.phone },
+              plan.name
+            ).catch(err => console.error('Error sending registration welcome email:', err));
+          }
+        }).catch(() => {});
+      }
+
       res.status(201).json(result);
     } catch (error) {
       console.error('Error registering membership:', error);
@@ -915,6 +1036,16 @@ async function startServer() {
         `$${numAmount} received from ${member.fullName} (Receipt #${receiptNumber})`,
         'PAYMENT_RECEIVED'
       );
+
+      if (member.email) {
+        prisma.gymSettings.findFirst().then(settings => {
+          sendPaymentReceiptEmail(
+            { fullName: member.fullName, email: member.email!, memberId: member.memberId },
+            payment,
+            settings
+          ).catch(err => console.error('Error dispatching payment receipt email:', err));
+        }).catch(() => {});
+      }
 
       res.status(201).json(payment);
     } catch (error) {
@@ -1800,6 +1931,48 @@ async function startServer() {
     }
   });
 
+  app.post('/api/users/:id/reset-password', requireAuth, requireRole(Role.SUPER_ADMIN), async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { password } = req.body;
+
+      if (!password || password.length < 6) {
+        res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+        return;
+      }
+
+      const targetUser = await prisma.user.findUnique({ where: { id } });
+      if (!targetUser) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      const newPasswordHash = await bcrypt.hash(password, 10);
+      await prisma.user.update({
+        where: { id },
+        data: { passwordHash: newPasswordHash }
+      });
+
+      await logAudit(
+        req.user!,
+        'USER_PASSWORD_RESET',
+        'USERS',
+        id,
+        `Admin ${req.user!.name} reset password for user ${targetUser.name} (${targetUser.email})`
+      );
+
+      // Attempt to send email notice if SMTP is configured
+      sendPasswordResetEmail(targetUser, password).catch(err =>
+        console.error('Password reset email error:', err)
+      );
+
+      res.json({ message: 'Password reset successfully' });
+    } catch (error: any) {
+      console.error('Error resetting user password:', error);
+      res.status(500).json({ error: 'Failed to reset user password' });
+    }
+  });
+
   // -------------------------------------------------------------
   // AUDIT LOGS (SUPER_ADMIN ONLY)
   // -------------------------------------------------------------
@@ -1926,6 +2099,13 @@ async function startServer() {
   });
 
   // -------------------------------------------------------------
+  // 404 HANDLER FOR UNMATCHED API ENDPOINTS
+  // -------------------------------------------------------------
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ error: `API endpoint ${req.method} ${req.path} not found` });
+  });
+
+  // -------------------------------------------------------------
   // VITE DEV / PRODUCTION MIDDLEWARE
   // -------------------------------------------------------------
 
@@ -1942,6 +2122,21 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // -------------------------------------------------------------
+  // GLOBAL ERROR HANDLER
+  // -------------------------------------------------------------
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Unhandled server error:', err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(500).json({
+      error: process.env.NODE_ENV === 'production'
+        ? 'An unexpected server error occurred'
+        : (err?.message || 'Internal server error')
+    });
+  });
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`TitanForge Gym Management Server running on port ${PORT}`);

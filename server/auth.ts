@@ -3,7 +3,11 @@ import jwt from 'jsonwebtoken';
 import { prisma } from './db.js';
 import { Role } from '@prisma/client';
 
-const JWT_SECRET = process.env.AUTH_SECRET || 'gym-mgmt-super-secret-key-32-chars-minimum';
+const JWT_SECRET = process.env.AUTH_SECRET || process.env.JWT_SECRET || 'gym-mgmt-super-secret-key-32-chars-minimum';
+
+if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'gym-mgmt-super-secret-key-32-chars-minimum') {
+  console.warn('⚠️ [SECURITY WARNING]: Running in production with default AUTH_SECRET. Please set a secure AUTH_SECRET in your environment variables.');
+}
 
 export interface AuthPayload {
   userId: string;
@@ -35,7 +39,8 @@ export function verifyToken(token: string): AuthPayload | null {
 }
 
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
-  const token = req.cookies?.gym_session || req.headers.authorization?.replace('Bearer ', '');
+  const authHeader = req.headers.authorization;
+  const token = req.cookies?.gym_session || (authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : null);
 
   if (!token) {
     res.status(401).json({ error: 'Your session has expired. Please login again.' });

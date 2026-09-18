@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, Role } from '../types';
+import { setAuthToken, removeAuthToken } from '../utils/api';
 
 interface AuthContextType {
   user: User | null;
@@ -34,6 +35,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const data = await response.json();
         setUser(data.user);
       } else {
+        removeAuthToken();
         setUser(null);
       }
     } catch {
@@ -61,6 +63,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: data.error || 'Login failed' };
       }
 
+      if (data.token) {
+        setAuthToken(data.token);
+      }
+
       setUser(data.user);
       return { success: true };
     } catch (err: any) {
@@ -74,6 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
+      removeAuthToken();
       setUser(null);
     }
   };
