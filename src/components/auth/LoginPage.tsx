@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Dumbbell, Lock, Mail, Eye, EyeOff, ShieldCheck, AlertCircle, ArrowRight } from 'lucide-react';
+import { Dumbbell, Lock, Mail, Eye, EyeOff, ShieldCheck, AlertCircle, ArrowRight, ArrowLeft } from 'lucide-react';
 
-export const LoginPage: React.FC = () => {
+interface LoginPageProps {
+  onBackToLanding?: () => void;
+}
+
+export const LoginPage: React.FC<LoginPageProps> = ({ onBackToLanding }) => {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,6 +44,18 @@ export const LoginPage: React.FC = () => {
       <div className="absolute bottom-10 right-10 w-72 h-72 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
+        {onBackToLanding && (
+          <div className="mb-4 flex justify-start">
+            <button
+              type="button"
+              onClick={onBackToLanding}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-850 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Public Website</span>
+            </button>
+          </div>
+        )}
         <div className="flex justify-center">
           <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-xl shadow-indigo-600/30">
             <Dumbbell className="w-8 h-8" />

@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Menu, Bell, CheckCircle, Clock, UserCheck, ShieldCheck, X } from 'lucide-react';
+import { Menu, Bell, CheckCircle, Clock, UserCheck, ShieldCheck, X, Globe } from 'lucide-react';
 import { NotificationItem } from '../../types';
 
 interface TopNavbarProps {
   onToggleMobileMenu: () => void;
   onOpenQuickCheckIn: () => void;
   onNavigateToNotifications: () => void;
+  onViewWebsite?: () => void;
 }
 
 export const TopNavbar: React.FC<TopNavbarProps> = ({
   onToggleMobileMenu,
   onOpenQuickCheckIn,
-  onNavigateToNotifications
+  onNavigateToNotifications,
+  onViewWebsite
 }) => {
   const { user } = useAuth();
   const [time, setTime] = useState<string>('');
@@ -81,6 +83,19 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
       </div>
 
       <div className="flex items-center gap-3">
+        {onViewWebsite && (
+          <button
+            id="top-view-website-btn"
+            type="button"
+            onClick={onViewWebsite}
+            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+            title="View Public Landing Page"
+          >
+            <Globe className="w-3.5 h-3.5 text-slate-500" />
+            <span>Public Website</span>
+          </button>
+        )}
+
         {/* Quick Check-In CTA Button */}
         <button
           id="top-quick-checkin-btn"

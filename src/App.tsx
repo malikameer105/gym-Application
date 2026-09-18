@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { Sidebar, NavView } from './components/layout/Sidebar';
 import { TopNavbar } from './components/layout/TopNavbar';
 import { LoginPage } from './components/auth/LoginPage';
+import { LandingPage } from './components/landing/LandingPage';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { MembersView } from './components/members/MembersView';
 import { MembershipsView } from './components/memberships/MembershipsView';
@@ -24,6 +25,8 @@ const MainLayout: React.FC = () => {
   const [currentView, setCurrentView] = useState<NavView>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [settings, setSettings] = useState<GymSettingsData | null>(null);
+  const [showLandingPagePreview, setShowLandingPagePreview] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   // Quick check-in modal state
   const [showQuickCheckInModal, setShowQuickCheckInModal] = useState(false);
@@ -112,7 +115,14 @@ const MainLayout: React.FC = () => {
   }
 
   if (!user) {
-    return <LoginPage />;
+    if (showLoginModal) {
+      return <LoginPage onBackToLanding={() => setShowLoginModal(false)} />;
+    }
+    return <LandingPage onLaunchApp={() => setShowLoginModal(true)} />;
+  }
+
+  if (showLandingPagePreview) {
+    return <LandingPage onLaunchApp={() => setShowLandingPagePreview(false)} />;
   }
 
   return (
@@ -137,6 +147,7 @@ const MainLayout: React.FC = () => {
             setShowQuickCheckInModal(true);
           }}
           onNavigateToNotifications={() => setCurrentView('notifications')}
+          onViewWebsite={() => setShowLandingPagePreview(true)}
         />
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">

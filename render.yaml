@@ -14,26 +14,26 @@ services:
         fromDatabase:
           name: gym-management-db
           property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
       - key: AUTH_SECRET
         generateValue: true
+      - key: FRONTEND_URL
+        value: "https://gymapplicationbymalik.vercel.app"
       - key: CORS_ORIGIN
-        value: "https://your-app.vercel.app,http://localhost:5173"
-      - key: SMTP_HOST
+        value: "https://gymapplicationbymalik.vercel.app,http://localhost:3000,http://localhost:5173"
+      - key: BREVO_SMTP_HOST
         value: "smtp-relay.brevo.com"
-      - key: SMTP_PORT
+      - key: BREVO_SMTP_PORT
         value: "587"
-      - key: SMTP_USER
+      - key: BREVO_SMTP_USER
         sync: false
-      - key: SMTP_PASSWORD
+      - key: BREVO_SMTP_PASSWORD
         sync: false
-      - key: SMTP_FROM
+      - key: MAIL_FROM_EMAIL
         value: "noreply@titanforgegym.com"
-      - key: SMTP_FROM_NAME
-        value: "TitanForge Fitness"
-      - key: ADMIN_EMAIL
-        sync: false
-      - key: ADMIN_PASSWORD
-        sync: false
+      - key: MAIL_FROM_NAME
+        value: "TitanForge Fitness & Gym"
 
 databases:
   - name: gym-management-db

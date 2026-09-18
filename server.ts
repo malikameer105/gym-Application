@@ -28,31 +28,49 @@ import {
 } from './server/email.js';
 import { Role, MemberStatus, MembershipStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 async function startServer() {
   const app = express();
 
-  // Production CORS configuration
-  const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
-    : true;
+  // Production CORS configuration: allow Vercel production frontend, FRONTEND_URL, CORS_ORIGIN, and localhost
+  const configuredOrigins: string[] = [];
+  if (process.env.CORS_ORIGIN) {
+    configuredOrigins.push(...process.env.CORS_ORIGIN.split(',').map(s => s.trim()));
+  }
+  if (process.env.FRONTEND_URL) {
+    configuredOrigins.push(...process.env.FRONTEND_URL.split(',').map(s => s.trim()));
+  }
+
+  // Always whitelist the production Vercel frontend & standard local dev ports
+  const defaultAllowedOrigins = [
+    'https://gymapplicationbymalik.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:5173'
+  ];
+
+  const allAllowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultAllowedOrigins]));
 
   app.use(cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins === true) return callback(null, true);
-      if (Array.isArray(allowedOrigins)) {
-        if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      // Allow requests with no origin (like mobile apps, curl, server-to-server, or deployment health checks)
+      if (!origin) return callback(null, true);
+
+      // Check exact match
+      if (allAllowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Check Vercel preview deployments (e.g., gymapplicationbymalik-*.vercel.app)
+      try {
+        const url = new URL(origin);
+        if (url.hostname.endsWith('.vercel.app') || url.hostname === 'localhost') {
           return callback(null, true);
         }
-        const matchesWildcard = allowedOrigins.some(pattern => {
-          if (pattern.startsWith('*.')) {
-            return origin.endsWith(pattern.slice(2));
-          }
-          return false;
-        });
-        if (matchesWildcard) return callback(null, true);
+      } catch {
+        // invalid URL format, disallow
       }
+
       return callback(null, true);
     },
     credentials: true,
@@ -64,7 +82,7 @@ async function startServer() {
   app.use(cookieParser());
 
   // -------------------------------------------------------------
-  // HEALTH CHECK & MONITORING
+  // HEALTH CHECK & MONITORING (Public, no auth required, HTTP 200)
   // -------------------------------------------------------------
   app.get('/api/health', async (req, res) => {
     let dbStatus = 'disconnected';
@@ -77,7 +95,7 @@ async function startServer() {
 
     const smtpConfig = getSmtpConfig();
 
-    res.json({
+    res.status(200).json({
       status: dbStatus === 'connected' ? 'healthy' : 'degraded',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
@@ -2139,7 +2157,7 @@ async function startServer() {
   });
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`TitanForge Gym Management Server running on port ${PORT}`);
+    console.log(`[STARTUP] TitanForge Gym Management Server listening on 0.0.0.0:${PORT} [environment: ${process.env.NODE_ENV || 'development'}]`);
   });
 }
 
